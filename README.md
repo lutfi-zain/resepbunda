@@ -1,4 +1,3 @@
-````md
 # Resep Bunda v2.0 🍳  
 **“Menghadirkan Kehangatan Dapur dalam Genggaman”**
 
@@ -245,6 +244,3 @@ chore: clean up unused imports
 
 **Happy Coding! 
 Tim ResepBunda**
-
-```
-```
