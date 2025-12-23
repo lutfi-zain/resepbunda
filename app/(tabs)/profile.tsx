@@ -1,4 +1,5 @@
 import { useFocusEffect } from "@react-navigation/native";
+import Constants from "expo-constants";
 import { Camera, ChevronRight, LogOut, Save, Trash2 } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import {
@@ -27,7 +28,7 @@ type UserProfileRow = {
 };
 
 const MAX_BIO_LENGTH = 100;
-const APP_VERSION = "1.0.2";
+const APP_VERSION = Constants.expoConfig?.version ?? "1.0.0";
 
 export default function Profile() {
   const { session } = useAuth();
