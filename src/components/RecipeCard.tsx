@@ -1,177 +1,219 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Clock, User, ChefHat } from 'lucide-react-native';
-import { Recipe } from '../types/recipe';
+import { Clock, Heart } from 'lucide-react-native';
+import React, { useRef } from 'react';
+import { Alert, Animated, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import { getCategoryLabel } from '../constants/categories';
 import { theme } from '../theme';
+import { Recipe } from '../types/recipe';
 
 interface RecipeCardProps {
   recipe: Recipe;
   onPress: () => void;
 }
 
+const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&h=200&fit=crop';
+
 const RecipeCard: React.FC<RecipeCardProps> = ({ recipe, onPress }) => {
+  const swipeableRef = useRef<Swipeable>(null);
+
+  const addToFavorite = () => {
+    Alert.alert(
+      "Ditambahkan ke Favorit",
+      `"${recipe.title}" telah ditambahkan ke daftar favorit kamu!`,
+      [{ text: "OK" }]
+    );
+    swipeableRef.current?.close();
+  };
+
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [1, 0.5],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <TouchableOpacity
+        style={styles.swipeAction}
+        onPress={addToFavorite}
+        activeOpacity={0.8}
+      >
+        <Animated.View style={[styles.swipeActionContent, { transform: [{ scale }] }]}>
+          <Heart size={24} color={theme.colors.neutral.bg} fill={theme.colors.neutral.bg} />
+          <Text style={styles.swipeActionText}>Favorit</Text>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <TouchableOpacity style={styles.cardContainer} onPress={onPress}>
-      {/* Card Header */}
-      <View style={styles.cardHeader}>
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>{recipe.title}</Text>
-          {recipe.isPrivate === 1 && (
-            <View style={styles.privateBadge}>
-              <Text style={styles.privateBadgeText}>PRIVATE</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.timeContainer}>
-          <Clock size={14} color={theme.colors.neutral.medium} />
-          <Text style={styles.timeText}>{recipe.cookingTime}</Text>
-        </View>
+    <Swipeable
+      ref={swipeableRef}
+      renderRightActions={renderRightActions}
+      rightThreshold={40}
+      overshootRight={false}
+    >
+      <TouchableOpacity
+        style={styles.cardContainer}
+        onPress={onPress}
+        activeOpacity={0.98}
+      >
+        {/* Image Thumbnail */}
+        <View style={styles.imageContainer}>
+        <Image
+          source={{ uri: recipe.image || DEFAULT_IMAGE }}
+          style={styles.image}
+          resizeMode="cover"
+        />
       </View>
 
-      {/* Description */}
-      <Text style={styles.description} numberOfLines={2}>
-        {recipe.description}
-      </Text>
+      {/* Content */}
+      <View style={styles.content}>
+        {/* Title */}
+        <Text style={styles.title} numberOfLines={1}>
+          {recipe.title || 'Untitled'}
+        </Text>
+        
+        {/* Description */}
+        <Text style={styles.description} numberOfLines={2}>
+          {recipe.description || 'Tidak ada deskripsi'}
+        </Text>
 
-      {/* Card Footer */}
-      <View style={styles.cardFooter}>
-        <View style={styles.creatorInfo}>
-          <View style={styles.avatar}>
-            <User size={16} color={theme.colors.neutral.medium} />
+        {/* Author */}
+        <Text style={styles.author}>
+          Oleh {recipe.creator || 'Anonymous'}
+        </Text>
+
+        {/* Footer: Time & Category */}
+        <View style={styles.footer}>
+          <View style={styles.timeContainer}>
+            <Clock size={14} color={theme.colors.neutral.medium} />
+            <Text style={styles.timeText}>{recipe.cookingTime || '- mnt'}</Text>
           </View>
-          <View>
-            <Text style={styles.creatorName}>{recipe.creator}</Text>
-            <View style={styles.creatorTypeContainer}>
-              <ChefHat size={12} color={theme.colors.neutral.medium} />
-              <Text style={styles.creatorType}>{recipe.creatorType}</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.viewButton}>
-          <Text style={styles.viewButtonText}>View Recipe</Text>
+          
+          <View style={styles.dot} />
+          
+          <Text style={styles.category}>{getCategoryLabel(recipe.category)}</Text>
         </View>
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Swipeable>
   );
 };
 
 const styles = StyleSheet.create({
   cardContainer: {
-    backgroundColor: '#FFFFFF', // Menggunakan putih solid untuk kartu
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
     borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
+    padding: theme.spacing.sm,
+    gap: theme.spacing.md,
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
     borderWidth: 1,
     borderColor: theme.colors.neutral.light,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.xs,
+  
+  imageContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: theme.radius.sm,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.neutral.light,
   },
-  titleContainer: {
+  
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+
+  content: {
     flex: 1,
-    marginRight: theme.spacing.xs,
+    minHeight: 96,
+    paddingVertical: 2,
   },
+
   title: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: theme.font.bold,
     color: theme.colors.neutral.dark,
+    lineHeight: 22,
+    marginBottom: 4,
   },
-  privateBadge: {
-    backgroundColor: theme.colors.primary.bg, // Menggunakan warna dari tema
-    borderColor: theme.colors.primary.light,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-    marginTop: 4,
+
+  description: {
+    fontSize: 12,
+    color: theme.colors.neutral.medium,
+    lineHeight: 18,
+    fontFamily: theme.font.regular,
+    marginBottom: 4,
   },
-  privateBadgeText: {
-    fontSize: 10,
-    fontFamily: theme.font.bold,
-    color: theme.colors.primary.dark, // Menggunakan warna dari tema
+
+  author: {
+    fontSize: 11,
+    fontFamily: theme.font.semibold,
+    color: theme.colors.neutral.dark,
+    marginBottom: theme.spacing.xs,
   },
+
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+
   timeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.neutral.bg,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: theme.radius.sm,
+    gap: 4,
   },
+
   timeText: {
     fontSize: 12,
-    marginLeft: 4,
-    color: theme.colors.neutral.medium,
     fontFamily: theme.font.medium,
-  },
-  description: {
-    fontSize: 14,
     color: theme.colors.neutral.medium,
-    marginBottom: theme.spacing.md,
-    lineHeight: 20,
-    fontFamily: theme.font.regular,
   },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.neutral.light,
+    marginHorizontal: 10,
+  },
+
+  category: {
+    fontSize: 12,
+    fontFamily: theme.font.medium,
+    color: theme.colors.neutral.medium,
+  },
+
+  swipeAction: {
+    backgroundColor: theme.colors.danger.DEFAULT,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.neutral.light,
-    paddingTop: theme.spacing.sm,
-    marginTop: theme.spacing.xs,
+    width: 80,
+    borderRadius: theme.radius.md,
+    marginLeft: theme.spacing.xs,
   },
-  creatorInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: theme.colors.neutral.bg,
+
+  swipeActionContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.neutral.light,
+    gap: 4,
   },
-  creatorName: {
-    fontSize: 14,
-    fontFamily: theme.font.bold,
-    color: theme.colors.neutral.dark,
-  },
-  creatorTypeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  creatorType: {
-    fontSize: 12,
-    color: theme.colors.neutral.medium,
-    marginLeft: 4,
-    fontFamily: theme.font.regular,
-  },
-  viewButton: {
-    backgroundColor: theme.colors.primary.bg,
-    borderColor: theme.colors.primary.light,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.pill,
-  },
-  viewButtonText: {
-    color: theme.colors.primary.dark,
-    fontSize: 12,
-    fontFamily: theme.font.bold,
+
+  swipeActionText: {
+    color: theme.colors.neutral.bg,
+    fontSize: 11,
+    fontFamily: theme.font.semibold,
   },
 });
 

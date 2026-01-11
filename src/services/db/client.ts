@@ -1,19 +1,30 @@
 import * as SQLite from "expo-sqlite";
+import { Platform } from "react-native";
 
-let dbPromise: Promise<any> | null = null;
+// --- Logic Database Connection ---
+
+type AnyDb = any;
+
+let dbPromise: Promise<AnyDb> | null = null;
 
 async function openDb() {
-  // expo-sqlite versi baru: openDatabaseAsync
-  if (typeof (SQLite as any).openDatabaseAsync === "function") {
-    return (SQLite as any).openDatabaseAsync("resepbunda.db");
+  if (Platform.OS === "web") {
+    throw new Error("SQLite not supported on web in this project.");
   }
 
-  // fallback lama: openDatabase
-  if (typeof (SQLite as any).openDatabase === "function") {
-    return (SQLite as any).openDatabase("resepbunda.db");
+  const SQLiteAny: any = SQLite as any;
+
+  // SDK baru (Expo 50+)
+  if (typeof SQLiteAny.openDatabaseAsync === "function") {
+    return SQLiteAny.openDatabaseAsync("resepbunda.db");
   }
 
-  throw new Error("SQLite API not available (no openDatabase/openDatabaseAsync).");
+  // Fallback SDK lama
+  if (typeof SQLiteAny.openDatabase === "function") {
+    return SQLiteAny.openDatabase("resepbunda.db");
+  }
+
+  throw new Error("SQLite API not available.");
 }
 
 export async function getDb() {
@@ -21,21 +32,24 @@ export async function getDb() {
   return dbPromise;
 }
 
+// --- Helper Functions ---
+
 export async function querySql<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   const db = await getDb();
 
-  // API baru
+  // Async API
   if (typeof db.getAllAsync === "function") {
-    return (await db.getAllAsync(sql, params)) as T[];
+    const rows = await db.getAllAsync(sql, params);
+    return (rows ?? []) as T[];
   }
 
-  // API lama
+  // Legacy API
   return await new Promise<T[]>((resolve, reject) => {
     db.transaction((tx: any) => {
       tx.executeSql(
         sql,
         params,
-        (_: any, res: any) => resolve(res.rows._array as T[]),
+        (_: any, res: any) => resolve((res?.rows?._array ?? []) as T[]),
         (_: any, err: any) => {
           reject(err);
           return false;
@@ -48,14 +62,14 @@ export async function querySql<T = any>(sql: string, params: any[] = []): Promis
 export async function execSql(sql: string, params: any[] = []): Promise<void> {
   const db = await getDb();
 
-  // API baru
+  // Async API
   if (typeof db.runAsync === "function") {
     await db.runAsync(sql, params);
     return;
   }
 
-  // API lama
-  await new Promise<void>((resolve, reject) => {
+  // Legacy API
+  return await new Promise<void>((resolve, reject) => {
     db.transaction((tx: any) => {
       tx.executeSql(
         sql,
@@ -67,5 +81,32 @@ export async function execSql(sql: string, params: any[] = []): Promise<void> {
         }
       );
     });
+  });
+}
+
+export async function execBatch(statements: { sql: string; params?: any[] }[]): Promise<void> {
+  const db = await getDb();
+
+  // Async API
+  if (typeof db.withTransactionAsync === "function" && typeof db.runAsync === "function") {
+    await db.withTransactionAsync(async () => {
+      for (const s of statements) {
+        await db.runAsync(s.sql, s.params ?? []);
+      }
+    });
+    return;
+  }
+
+  // Legacy API
+  return await new Promise<void>((resolve, reject) => {
+    db.transaction(
+      (tx: any) => {
+        for (const s of statements) {
+          tx.executeSql(s.sql, s.params ?? []);
+        }
+      },
+      (err: any) => reject(err),
+      () => resolve()
+    );
   });
 }

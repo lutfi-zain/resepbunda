@@ -1,66 +1,83 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
-import { Search, SlidersHorizontal, ChefHat } from 'lucide-react-native';
-import { Recipe } from '../../src/types/recipe';
-import { querySql } from '../../src/services/db/client';
-import RecipeCard from '../../src/components/RecipeCard';
-import FilterModal, { SortOption } from '../../src/components/FilterModal';
-import { theme } from '../../src/theme';
+import { useFocusEffect } from "@react-navigation/native";
+import { router } from "expo-router";
+import { ChefHat, LogOut, Search, SlidersHorizontal } from "lucide-react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import {
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import FilterModal, { SortOption } from "../../src/components/FilterModal";
+import RecipeCard from "../../src/components/RecipeCard";
+import { CATEGORIES } from "../../src/constants/categories";
+import { useLogoutConfirmation } from "../../src/hooks/useLogoutConfirmation";
+import { querySql } from "../../src/services/db";
+import { theme } from "../../src/theme";
+import type { Recipe } from "../../src/types/recipe";
 
-const categories = [
-  { id: 'all', name: 'All' },
-  { id: 'special', name: 'Special' },
-  { id: 'healthy', name: 'Healthy' },
-  { id: 'dessert', name: 'Dessert' },
-  { id: 'traditional', name: 'Traditional' },
-];
+const parseNumber = (str: string) => parseInt(String(str).replace(/\D/g, "")) || 0;
 
-// Helper untuk parsing angka dari string (misal: "45 min" -> 45)
-const parseNumber = (str: string) => parseInt(str.replace(/\D/g, '')) || 0;
-
-const HomeScreen = () => {
+export default function HomeScreen() {
+  const { confirmLogout } = useLogoutConfirmation();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // State untuk modal dan filter
+  const [userName, setUserName] = useState("Chef");
+  const [searchQuery, setSearchQuery] = useState("");
   const [isFilterModalVisible, setFilterModalVisible] = useState(false);
-  const [sortBy, setSortBy] = useState<SortOption>('recommended');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortBy, setSortBy] = useState<SortOption>("recommended");
+  const [selectedCategory, setSelectedCategory] = useState("all");
 
-  const fetchRecipes = async () => {
+  const fetchData = async () => {
     try {
-      // Ambil HANYA resep publik untuk feed utama
-      const result = await querySql<Recipe>('SELECT * FROM recipes WHERE isPrivate = 0');
-      setRecipes(result);
+      const recipeResult = await querySql<Recipe>(
+        "SELECT * FROM recipes WHERE isPrivate = 0 ORDER BY COALESCE(rating, 0) DESC, id DESC"
+      );
+      setRecipes(recipeResult);
+
+      const userResult = await querySql<{ fullName: string }>(`
+        SELECT u.fullName 
+        FROM session s
+        JOIN users u ON s.email = u.email
+        WHERE s.id = 1
+      `);
+
+      if (userResult.length > 0 && userResult[0].fullName) {
+        const firstName = userResult[0].fullName.split(" ")[0];
+        setUserName(firstName);
+      }
     } catch (e) {
-      console.error('Failed to fetch recipes', e);
+      console.error("Failed to fetch data", e);
+      setRecipes([]);
     }
   };
 
-  useFocusEffect(useCallback(() => { fetchRecipes(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [])
+  );
 
   const filteredAndSortedRecipes = useMemo(() => {
-    let result = recipes.filter(recipe => {
-      const lowerCaseQuery = searchQuery.toLowerCase();
-      
-      // Logika Filter yang Diperbarui
-      const matchesCategory = selectedCategory === 'all' || recipe.category === selectedCategory;
-      const matchesSearch = 
-        recipe.title.toLowerCase().includes(lowerCaseQuery) ||
-        recipe.category.toLowerCase().includes(lowerCaseQuery); // Mencari di kategori juga
+    let result = recipes.filter((recipe) => {
+      const q = searchQuery.trim().toLowerCase();
+      const matchesCategory = selectedCategory === "all" || recipe.category === selectedCategory;
+      if (!q) return matchesCategory;
 
-      return matchesCategory && matchesSearch;
+      const title = String(recipe.title ?? "").toLowerCase();
+      const category = String(recipe.category ?? "").toLowerCase();
+      return matchesCategory && (title.includes(q) || category.includes(q));
     });
 
-    // Terapkan sorting
-    if (sortBy === 'rating') {
-      result.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    } else if (sortBy === 'time') {
-      result.sort((a, b) => parseNumber(a.cookingTime) - parseNumber(b.cookingTime));
-    } else if (sortBy === 'calories') {
-      result.sort((a, b) => parseNumber(a.calories || '0') - parseNumber(b.calories || '0'));
+    if (sortBy === "rating") {
+      result = [...result].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    } else if (sortBy === "time") {
+      result = [...result].sort((a, b) => parseNumber(a.cookingTime) - parseNumber(b.cookingTime));
+    } else if (sortBy === "calories") {
+      result = [...result].sort((a, b) => parseNumber(a.calories || "0") - parseNumber(b.calories || "0"));
     }
 
     return result;
@@ -71,70 +88,107 @@ const HomeScreen = () => {
     setSelectedCategory(newCategory);
   };
 
-  const handleRecipePress = (recipeId: number) => {
-    router.push(`/recipe/${recipeId}`);
-  };
-
   const renderHeader = () => (
     <View style={styles.headerContainer}>
-      <View style={styles.headerText}>
-        <Text style={styles.greeting}>Hi, Saimon Fang</Text>
-        <Text style={styles.subGreeting}>What do you want to cook today?</Text>
+      {/* Greeting Section */}
+      <View style={styles.greetingSection}>
+        <View>
+          <Text style={styles.greetingText}>
+            Hi, <Text style={styles.userNameText}>{userName}</Text> 👋
+          </Text>
+          <Text style={styles.subGreetingText}>What do you want to cook today?</Text>
+        </View>
+        <TouchableOpacity onPress={confirmLogout} style={styles.logoutButton}>
+          <LogOut color={theme.colors.neutral.medium} size={24} />
+        </TouchableOpacity>
       </View>
-      <View style={styles.searchSection}>
-        <View style={styles.searchInputContainer}>
-          <Search size={18} color={theme.colors.neutral.medium} style={{ marginLeft: 16 }} />
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Search size={20} color={theme.colors.neutral.medium} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search recipes or categories..." // Placeholder diperbarui
+            placeholder="Search recipes..."
             placeholderTextColor={theme.colors.neutral.medium}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
         </View>
-        <TouchableOpacity style={styles.filterButton} onPress={() => setFilterModalVisible(true)}>
-          <SlidersHorizontal size={20} color={'white'} />
+
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => setFilterModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <SlidersHorizontal size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-        {categories.map(category => (
-          <TouchableOpacity
-            key={category.id}
-            style={[styles.categoryChip, selectedCategory === category.id && styles.selectedCategoryChip]}
-            onPress={() => setSelectedCategory(category.id)}
-          >
-            <Text style={[styles.categoryText, selectedCategory === category.id && styles.selectedCategoryText]}>
-              {category.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+
+      {/* Categories */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryScrollContent}
+        style={styles.categoryScroll}
+      >
+        {CATEGORIES.map((category) => {
+          const isActive = selectedCategory === category.id;
+          return (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.categoryChip,
+                isActive ? styles.categoryChipActive : styles.categoryChipInactive,
+              ]}
+              onPress={() => setSelectedCategory(category.id)}
+            >
+              <Text
+                style={[
+                  styles.categoryText,
+                  isActive ? styles.categoryTextActive : styles.categoryTextInactive,
+                ]}
+              >
+                {category.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
+
+      {/* Section Title */}
+      <View style={styles.sectionTitleContainer}>
+        <Text style={styles.sectionTitle}>{searchQuery ? "Search Results" : "Fresh Recipes"}</Text>
+      </View>
     </View>
   );
 
   return (
-    <SafeAreaView style={{flex: 1, backgroundColor: theme.colors.neutral.bg}}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
       <FlatList
         data={filteredAndSortedRecipes}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
-            <RecipeCard
-            recipe={item}
-            onPress={() => handleRecipePress(item.id)}
-            />
+          <View style={styles.cardWrapper}>
+            <RecipeCard recipe={item} onPress={() => router.push(`/recipe/${item.id}`)} />
+          </View>
         )}
         ListHeaderComponent={renderHeader}
-        contentContainerStyle={styles.listContentContainer}
-        style={styles.container}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-            <ChefHat size={48} color={theme.colors.neutral.light} />
-            <Text style={styles.emptyText}>No recipes found.</Text>
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconBg}>
+              <ChefHat size={40} color={theme.colors.primary.DEFAULT} />
             </View>
+            <Text style={styles.emptyTitle}>No Recipes Found</Text>
+            <Text style={styles.emptySubtitle}>Try adjusting your search or filters</Text>
+          </View>
         }
       />
-      <FilterModal 
-        visible={isFilterModalVisible} 
+
+      <FilterModal
+        visible={isFilterModalVisible}
         onClose={() => setFilterModalVisible(false)}
         onApply={handleApplyFilter}
         initialSortBy={sortBy}
@@ -142,117 +196,185 @@ const HomeScreen = () => {
       />
     </SafeAreaView>
   );
-};
+}
 
-// Styles tetap sama
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: theme.colors.neutral.bg,
+    backgroundColor: theme.colors.neutral.bg, // Standarisasi
   },
-  listContentContainer: {
+  listContent: {
+    paddingBottom: 30,
+  },
+  cardWrapper: {
     paddingHorizontal: theme.spacing.md,
-    paddingBottom: 24,
-  },
-  headerContainer: {
-    paddingBottom: theme.spacing.sm,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.neutral.light,
     marginBottom: theme.spacing.md,
   },
-  headerText: {
+
+  // Header Styles
+  headerContainer: {
+    backgroundColor: "transparent",
+    marginBottom: 4,
+  },
+  greetingSection: {
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.md,
-    marginBottom: theme.spacing.md,
+    marginBottom: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  greeting: {
-    fontSize: 24,
-    fontFamily: theme.font.bold,
+  greetingText: {
+    fontSize: 26,
+    fontFamily: theme.font.regular,
     color: theme.colors.neutral.dark,
+    marginBottom: 4,
   },
-  subGreeting: {
-    fontSize: 14,
+  userNameText: {
+    fontFamily: theme.font.bold,
+    color: theme.colors.primary.DEFAULT,
+  },
+  subGreetingText: {
+    fontSize: 15,
     fontFamily: theme.font.regular,
     color: theme.colors.neutral.medium,
+    letterSpacing: 0.3,
   },
-  searchSection: {
-    flexDirection: 'row',
-    paddingHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.md,
-    alignItems: 'center',
-  },
-  searchInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.neutral.bg,
-    borderRadius: theme.radius.pill,
+  logoutButton: {
+    width: 44,
     height: 44,
-    borderColor: theme.colors.neutral.light,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
+    borderColor: theme.colors.neutral.light, // Standarisasi Border
+  },
+
+  // Search Section
+  searchContainer: {
+    flexDirection: "row",
+    paddingHorizontal: theme.spacing.md,
+    marginBottom: 24,
+    alignItems: "center",
+    gap: 12,
+  },
+  searchBar: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: theme.radius.md,
+    height: 50,
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  searchIcon: {
+    marginLeft: 16,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    height: '100%',
-    paddingHorizontal: theme.spacing.sm,
-    fontSize: 14,
-    fontFamily: theme.font.regular,
+    height: "100%",
+    fontSize: 15,
+    fontFamily: theme.font.medium,
     color: theme.colors.neutral.dark,
+    paddingRight: 16,
   },
   filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: theme.radius.pill,
+    width: 50,
+    height: 50,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.primary.DEFAULT,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: theme.spacing.sm,
-    elevation: 4,
+    justifyContent: "center",
+    alignItems: "center",
     shadowColor: theme.colors.primary.DEFAULT,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowRadius: 12,
+    elevation: 6,
   },
+
+  // Categories
   categoryScroll: {
+    marginBottom: 24,
+  },
+  categoryScrollContent: {
     paddingHorizontal: theme.spacing.md,
   },
   categoryChip: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.neutral.bg,
-    borderColor: theme.colors.neutral.light,
-    borderWidth: 1,
-    marginRight: theme.spacing.sm,
-    height: 40,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 100,
+    marginRight: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  selectedCategoryChip: {
+  categoryChipInactive: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: theme.colors.neutral.light, // Standarisasi Border
+  },
+  categoryChipActive: {
     backgroundColor: theme.colors.primary.DEFAULT,
-    borderColor: theme.colors.primary.dark,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.primary.DEFAULT,
+    shadowColor: theme.colors.primary.DEFAULT,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   categoryText: {
     fontSize: 14,
     fontFamily: theme.font.medium,
+  },
+  categoryTextInactive: {
     color: theme.colors.neutral.medium,
   },
-  selectedCategoryText: {
-    color: 'white',
+  categoryTextActive: {
+    color: "#FFFFFF",
     fontFamily: theme.font.bold,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 100,
+
+  // Section Title
+  sectionTitleContainer: {
+    paddingHorizontal: theme.spacing.md,
+    marginBottom: 12,
   },
-  emptyText: {
-    marginTop: 16,
+  sectionTitle: {
     fontSize: 18,
-    fontFamily: theme.font.semibold,
+    fontFamily: theme.font.bold,
+    color: theme.colors.neutral.dark,
+  },
+
+  // Empty State
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 60,
+  },
+  emptyIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: theme.colors.primary.bg, // Standarisasi BG (Hijau Muda)
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontFamily: theme.font.bold,
+    color: theme.colors.neutral.dark,
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    fontFamily: theme.font.regular,
     color: theme.colors.neutral.medium,
   },
 });
-
-export default HomeScreen;
